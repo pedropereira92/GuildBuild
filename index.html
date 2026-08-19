@@ -9,14 +9,19 @@
   Ficha de build do membro: atributos, equipamentos, cartas, penas, montarias e pets.
 
   ESTADO: pagina solta, sem servidor. Abre com duplo clique (file://) ou por
-  qualquer host estatico. Nao ha login do Discord ainda - o campo "Discord ID" e
-  preenchido a mao e existe para ser a chave quando a integracao chegar.
+  qualquer host estatico (hoje: GitHub Pages, no repo GuildBuild).
 
-  COMO ISSO VIRA "DISCORD LOGADO" (etapa 2, ainda nao feita):
+  VINCULO: o botao "Minha ficha de build" do /perfil manda o cadastro do membro
+  no fragmento da URL (`#d=<base64url>`, ver src/lib/ficha.js) e a pagina
+  preenche Discord ID, nick e classe sozinha. Quem abre a pagina direto digita
+  esses campos a mao, como antes. Isso PREENCHE, NAO AUTENTICA - ver o bloco
+  "Vinculo vindo do Discord" la embaixo.
+
+  O QUE FALTA PARA SER LOGIN DE VERDADE (etapa 2, ainda nao feita):
     1. subir um HTTP no container (o bot hoje nao abre porta nenhuma);
-    2. OAuth2 do Discord OU link assinado gerado pelo /perfil;
-    3. o servidor injeta discordId/nick/classeId e o botao "Exportar" vira
-       um POST que grava em data/builds.json pela store (src/lib/store.js).
+    2. assinar o link (HMAC + validade) OU OAuth2, com o SERVIDOR conferindo;
+    3. o "Baixar JSON" vira um POST que grava em data/builds.json pela store
+       (src/lib/store.js), e o /perfil passa a mostrar o build para a guild.
   Nada aqui precisa ser reescrito para isso: o JSON exportado ja e o contrato.
 
   FORMATO DO JSON (versao 1) - o que o backend futuro vai ler:
@@ -117,6 +122,8 @@
   }
   input:focus, select:focus { outline: 2px solid var(--ouro); outline-offset: -1px; border-color: var(--ouro); }
   input::placeholder { color: #5f656d; }
+  /* Campo preenchido pelo link do Discord: dá para ler e copiar, não para editar. */
+  input[readonly] { background: #101115; color: var(--texto-fraco); cursor: not-allowed; }
 
   .card {
     background: var(--painel-alto);
@@ -224,11 +231,10 @@
 </header>
 
 <main>
-  <p class="aviso">
-    <strong>Sem login do Discord ainda.</strong> Esta versão roda solta, sem servidor. Preencha o
-    <em>Discord ID</em> à mão (Discord → Configurações → Avançado → Modo desenvolvedor → botão
-    direito no seu nome → Copiar ID) e envie o JSON exportado. Quando o servidor existir, esse
-    campo passa a vir preenchido pelo login.
+  <p class="aviso" id="aviso">
+    <strong>Abriu direto pelo navegador?</strong> Preencha o <em>Discord ID</em> à mão (Discord →
+    Configurações → Avançado → Modo desenvolvedor → botão direito no seu nome → Copiar ID). Para
+    vir preenchido, use <strong>/perfil</strong> no Discord e clique em <em>Minha ficha de build</em>.
   </p>
   <form id="ficha" autocomplete="off"></form>
 </main>
@@ -553,6 +559,10 @@ function coletar() {
 /** Ignora campo desconhecido e tolera campo faltando - import de versao antiga nao quebra. */
 function aplicar(dados) {
   for (const input of inputs()) {
+    // Campo travado veio do link do Discord, nao do arquivo. Sem esta linha, o
+    // "Limpar ficha" apagaria o Discord ID e ninguem conseguiria digitar de
+    // volta (o campo continua readonly), e um import traria o vinculo de outro.
+    if (input.readOnly) continue;
     const valor = lerCaminho(dados, input.dataset.caminho);
     input.value = valor === null || valor === undefined ? '' : String(valor);
   }
@@ -572,9 +582,17 @@ function atualizarTotal() {
 /* Persistencia local                                                  */
 /* ------------------------------------------------------------------ */
 
-function avisar(texto, tipo = '') {
+/**
+ * `fixo` protege a mensagem do autosave. Sem isso o "trocou de dono" viveria
+ * 400 ms e seria trocado por "Salvo neste navegador" antes de alguem ler - o
+ * proprio aplicarVinculo salva logo depois de avisar. O primeiro toque em
+ * qualquer campo libera de novo.
+ */
+let avisoFixo = false;
+function avisar(texto, tipo = '', fixo = false) {
   status.textContent = texto;
   status.className = `status ${tipo}`;
+  avisoFixo = fixo;
 }
 
 let timerSalvar = null;
@@ -583,6 +601,7 @@ function salvarDepois() {
   timerSalvar = setTimeout(() => {
     try {
       localStorage.setItem(CHAVE_LOCAL, JSON.stringify(coletar()));
+      if (avisoFixo) return; // mensagem importante na tela; salvou do mesmo jeito
       const hora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
       avisar(`Salvo neste navegador às ${hora}`, 'ok');
     } catch (err) {
@@ -610,6 +629,69 @@ function carregarSalvo() {
   } catch {
     avisar('O rascunho salvo estava corrompido e foi ignorado', 'erro');
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Vinculo vindo do Discord                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * O botao "Minha ficha de build" do `/perfil` manda o cadastro do membro no
+ * FRAGMENTO da URL (`#d=<base64url>`), montado por src/lib/ficha.js. Fragmento
+ * nao vai para o servidor: o id e o nick nao entram no log do GitHub Pages nem
+ * vazam pelo Referer.
+ *
+ * Isto PREENCHE, nao autentica - o link encaminhado abre a ficha com o vinculo
+ * de outra pessoa. Enquanto o retorno for um JSON exportado a mao, tanto faz:
+ * quem quisesse mentir ja podia digitar o que quisesse.
+ */
+function vinculoDoLink() {
+  const bruto = new URLSearchParams(window.location.hash.slice(1)).get('d');
+  if (!bruto) return null;
+  try {
+    // base64url -> base64; `atob` devolve bytes, e o nick pode ter acento.
+    const base64 = bruto.replace(/-/g, '+').replace(/_/g, '/');
+    const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    return null;
+  }
+}
+
+function aplicarVinculo(vinculo) {
+  const campoDe = (caminho) => form.querySelector(`[data-caminho="${caminho}"]`);
+  const id = campoDe('discordId');
+  const nick = campoDe('nick');
+  const classe = campoDe('classeId');
+
+  // Navegador compartilhado: o rascunho salvo pode ser de outra pessoa. O link
+  // manda, mas o resto do build continua na tela - apagar o que alguem digitou
+  // seria pior do que avisar.
+  const trocouDeDono = Boolean(id.value) && id.value !== vinculo.id;
+
+  id.value = vinculo.id;
+  id.readOnly = true;
+  // Nick e classe so entram se o campo estiver vazio: quem tem personagem
+  // alternativo pode ter ajustado a mao, e o link nao deve desfazer isso.
+  if (trocouDeDono || !nick.value) nick.value = vinculo.nick ?? '';
+  if (trocouDeDono || !classe.value) classe.value = vinculo.classe ?? '';
+
+  const aviso = document.getElementById('aviso');
+  aviso.textContent = '';
+  aviso.append(
+    el('strong', { textContent: 'Vinculado pelo Discord. ' }),
+    `Esta ficha é de ${vinculo.nick || vinculo.id} — o Discord ID veio do seu cadastro e não é `
+    + 'editável aqui. Para trocar de personagem, use /registrar no Discord e abra o link de novo.',
+  );
+
+  // Tira o payload da barra de endereco: evita compartilhar o proprio vinculo
+  // sem querer ao copiar a URL, e nao deixa o link com dados no historico.
+  window.history.replaceState(null, '', window.location.pathname + window.location.search);
+
+  salvarDepois();
+  avisar(trocouDeDono
+    ? 'Vínculo trocado — esta ficha estava com outro Discord ID; o resto continua como estava'
+    : 'Vínculo do Discord aplicado', trocouDeDono ? 'erro' : 'ok', true);
 }
 
 /* ------------------------------------------------------------------ */
@@ -702,6 +784,7 @@ form.append(
 );
 
 form.addEventListener('input', () => {
+  avisoFixo = false; // a pessoa ja esta mexendo: o aviso cumpriu o papel
   atualizarTotal();
   salvarDepois();
 });
@@ -729,6 +812,11 @@ form.addEventListener('change', (ev) => {
 form.addEventListener('submit', (ev) => ev.preventDefault());
 
 carregarSalvo();
+
+// Depois do rascunho, de proposito: o link do Discord manda no vinculo.
+const vinculo = vinculoDoLink();
+if (vinculo?.id) aplicarVinculo(vinculo);
+
 atualizarTotal();
 </script>
 </body>

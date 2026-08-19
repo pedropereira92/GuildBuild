@@ -1,0 +1,735 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ficha de Build — Suprema</title>
+
+<!--
+  Ficha de build do membro: atributos, equipamentos, cartas, penas, montarias e pets.
+
+  ESTADO: pagina solta, sem servidor. Abre com duplo clique (file://) ou por
+  qualquer host estatico. Nao ha login do Discord ainda - o campo "Discord ID" e
+  preenchido a mao e existe para ser a chave quando a integracao chegar.
+
+  COMO ISSO VIRA "DISCORD LOGADO" (etapa 2, ainda nao feita):
+    1. subir um HTTP no container (o bot hoje nao abre porta nenhuma);
+    2. OAuth2 do Discord OU link assinado gerado pelo /perfil;
+    3. o servidor injeta discordId/nick/classeId e o botao "Exportar" vira
+       um POST que grava em data/builds.json pela store (src/lib/store.js).
+  Nada aqui precisa ser reescrito para isso: o JSON exportado ja e o contrato.
+
+  FORMATO DO JSON (versao 1) - o que o backend futuro vai ler:
+    { versao, atualizadoEm, discordId, nick, classeId,
+      atributos:   { str, agi, vit, int, dex, luk },              // number|null
+      equipamentos:{ arma|escudo|armadura|capa|bota|acessorio1|acessorio2:
+                     { item: string, cartas: string[] } },
+      visuais:     { topo|meio|baixo|traje|costas: { cartas: string[2] } },
+      penas:       { ofensivas: [{nome,nivel}]x5, defensivas: [{nome,nivel}]x5 },
+      montarias:   { sturdy, dexterity, strength, protector },    // number|null
+      pets:        [{ nome, grade }]x4 }                          // grade 1..10
+
+  Campos numericos vazios viram `null`, nao 0: "nao preenchi" e diferente de "zero".
+-->
+
+<style>
+  :root {
+    --ouro: #d4af37;          /* mesma cor dos embeds do bot (ui.COR) */
+    --fundo: #16171b;
+    --painel: #1e2026;
+    --painel-alto: #24272f;
+    --borda: #33373f;
+    --texto: #e8e6e3;
+    --texto-fraco: #9aa0a8;
+    --ok: #3ba55d;
+    --erro: #cf3a3a;
+    --raio: 10px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 0 0 96px;
+    background: var(--fundo);
+    color: var(--texto);
+    font: 15px/1.5 system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+
+  header {
+    padding: 28px 20px 20px;
+    border-bottom: 1px solid var(--borda);
+    background: linear-gradient(180deg, #1c1e24, var(--fundo));
+  }
+  header h1 { margin: 0; font-size: 24px; letter-spacing: .3px; color: var(--ouro); }
+  header p  { margin: 6px 0 0; color: var(--texto-fraco); font-size: 14px; max-width: 70ch; }
+
+  main { max-width: 1180px; margin: 0 auto; padding: 20px; }
+
+  section {
+    background: var(--painel);
+    border: 1px solid var(--borda);
+    border-radius: var(--raio);
+    margin-bottom: 20px;
+    overflow: hidden;
+  }
+  section > h2 {
+    margin: 0;
+    padding: 12px 16px;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--ouro);
+    background: var(--painel-alto);
+    border-bottom: 1px solid var(--borda);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+  }
+  section > h2 .nota {
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--texto-fraco);
+    font-size: 12px;
+    font-weight: 400;
+  }
+  .conteudo { padding: 16px; }
+
+  .grade { display: grid; gap: 14px; }
+  .g-ident { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+  .g-attr  { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+  .g-cards { grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); }
+  .g-penas { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .g-mont  { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+
+  label { display: block; font-size: 12px; color: var(--texto-fraco); margin-bottom: 4px; }
+
+  input, select {
+    width: 100%;
+    padding: 8px 10px;
+    background: #15161a;
+    color: var(--texto);
+    border: 1px solid var(--borda);
+    border-radius: 6px;
+    font: inherit;
+    font-size: 14px;
+  }
+  input:focus, select:focus { outline: 2px solid var(--ouro); outline-offset: -1px; border-color: var(--ouro); }
+  input::placeholder { color: #5f656d; }
+
+  .card {
+    background: var(--painel-alto);
+    border: 1px solid var(--borda);
+    border-radius: 8px;
+    padding: 12px;
+  }
+  .card h3 {
+    margin: 0 0 10px;
+    font-size: 13px;
+    color: var(--texto);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+  .card h3 .slots {
+    font-size: 11px;
+    color: var(--ouro);
+    border: 1px solid var(--ouro);
+    border-radius: 999px;
+    padding: 1px 8px;
+    white-space: nowrap;
+    font-weight: 400;
+  }
+  .card .campo + .campo { margin-top: 8px; }
+
+  .total { margin-top: 14px; font-size: 13px; color: var(--texto-fraco); }
+  .total strong { color: var(--ouro); font-size: 16px; }
+
+  .linha-dupla { display: grid; grid-template-columns: 1fr 84px; gap: 8px; align-items: end; }
+
+  .barra {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    background: rgba(22, 23, 27, .96);
+    border-top: 1px solid var(--borda);
+    padding: 12px 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
+  button {
+    padding: 9px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--borda);
+    background: var(--painel-alto);
+    color: var(--texto);
+    font: inherit;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--ouro); }
+  button.principal { background: var(--ouro); color: #1a1a1a; border-color: var(--ouro); font-weight: 600; }
+  button.perigo:hover { border-color: var(--erro); color: #ff9b9b; }
+  .barra .status { margin-left: auto; font-size: 13px; color: var(--texto-fraco); }
+  .barra .status.ok { color: var(--ok); }
+  .barra .status.erro { color: var(--erro); }
+
+  dialog {
+    background: var(--painel);
+    color: var(--texto);
+    border: 1px solid var(--borda);
+    border-radius: var(--raio);
+    max-width: 620px;
+    width: calc(100% - 40px);
+    padding: 0;
+  }
+  dialog::backdrop { background: rgba(0, 0, 0, .6); }
+  dialog h2 { margin: 0; padding: 14px 16px; font-size: 15px; color: var(--ouro); border-bottom: 1px solid var(--borda); }
+  dialog .corpo { padding: 16px; }
+  dialog textarea {
+    width: 100%;
+    min-height: 190px;
+    background: #15161a;
+    color: var(--texto);
+    border: 1px solid var(--borda);
+    border-radius: 6px;
+    padding: 10px;
+    font: 13px/1.45 ui-monospace, Consolas, monospace;
+    resize: vertical;
+  }
+  dialog .rodape { display: flex; gap: 10px; justify-content: flex-end; padding: 0 16px 16px; }
+
+  .aviso {
+    margin: 0 0 14px;
+    padding: 10px 12px;
+    border-left: 3px solid var(--ouro);
+    background: #201f1a;
+    color: var(--texto-fraco);
+    font-size: 13px;
+    border-radius: 0 6px 6px 0;
+  }
+</style>
+</head>
+
+<body>
+<header>
+  <h1>Ficha de Build</h1>
+  <p>
+    Preencha atributos, equipamentos, cartas, penas, montarias e pets. O que você digita é
+    salvo automaticamente <strong>neste navegador</strong> — nada sai daqui até você exportar.
+  </p>
+</header>
+
+<main>
+  <p class="aviso">
+    <strong>Sem login do Discord ainda.</strong> Esta versão roda solta, sem servidor. Preencha o
+    <em>Discord ID</em> à mão (Discord → Configurações → Avançado → Modo desenvolvedor → botão
+    direito no seu nome → Copiar ID) e envie o JSON exportado. Quando o servidor existir, esse
+    campo passa a vir preenchido pelo login.
+  </p>
+  <form id="ficha" autocomplete="off"></form>
+</main>
+
+<div class="barra">
+  <button type="button" class="principal" id="btn-exportar">Baixar JSON</button>
+  <button type="button" id="btn-copiar">Copiar JSON</button>
+  <button type="button" id="btn-importar">Importar</button>
+  <button type="button" class="perigo" id="btn-limpar">Limpar ficha</button>
+  <span class="status" id="status">—</span>
+</div>
+
+<dialog id="dlg-importar">
+  <h2>Importar ficha</h2>
+  <div class="corpo">
+    <label for="arquivo">Arquivo .json</label>
+    <input type="file" id="arquivo" accept="application/json,.json">
+    <p style="color:var(--texto-fraco);font-size:13px;margin:14px 0 6px">ou cole o conteúdo:</p>
+    <textarea id="colado" placeholder="{ &quot;versao&quot;: 1, ... }"></textarea>
+  </div>
+  <div class="rodape">
+    <button type="button" id="btn-cancelar-import">Cancelar</button>
+    <button type="button" class="principal" id="btn-confirmar-import">Importar</button>
+  </div>
+</dialog>
+
+<script src="cartas.js"></script>
+<script>
+'use strict';
+
+/* ------------------------------------------------------------------ */
+/* Esquema - a pagina inteira e gerada a partir daqui                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Espelho manual de src/constants/classes.js. Se uma classe for adicionada la,
+ * acrescente aqui tambem - nao ha build que sincronize os dois. Os `id` batem de
+ * proposito: e por eles que o backend futuro vai casar a ficha com o cadastro.
+ */
+const CLASSES = [
+  ['lorde', 'Lorde'], ['paladino', 'Paladino'], ['algoz', 'Algoz'],
+  ['atirador_de_elite', 'Atirador de Elite'], ['arquimago', 'Arquimago'],
+  ['desordeiro', 'Desordeiro'], ['mestre', 'Mestre'], ['mestre_ferreiro', 'Mestre Ferreiro'],
+  ['criador', 'Criador'], ['sumosacerdote', 'Sumo Sacerdote'], ['professor', 'Professor'],
+  ['menestrel', 'Menestrel'], ['cigana', 'Cigana'], ['invocador', 'Invocador'],
+];
+
+const ATRIBUTOS = [
+  ['str', 'STR', 'Força'], ['agi', 'AGI', 'Agilidade'], ['vit', 'VIT', 'Vitalidade'],
+  ['int', 'INT', 'Inteligência'], ['dex', 'DEX', 'Destreza'], ['luk', 'LUK', 'Sorte'],
+];
+
+/**
+ * `cartas` e a quantidade de slots pedida. `opcionalAPartirDe` marca em que
+ * indice o slot deixa de ser esperado - os acessorios tem "1 ou 2 cartas", entao
+ * o segundo campo aparece rotulado como opcional em vez de virar dois tipos de
+ * acessorio diferentes.
+ */
+const EQUIPAMENTOS = [
+  { id: 'arma',       nome: 'Arma',        cat: 'arma',      cartas: 2, nota: 'uma mão' },
+  { id: 'escudo',     nome: 'Escudo',      cat: 'escudo',    cartas: 1 },
+  { id: 'armadura',   nome: 'Armadura',    cat: 'armadura',  cartas: 1 },
+  { id: 'capa',       nome: 'Capa',        cat: 'capa',      cartas: 2 },
+  { id: 'bota',       nome: 'Bota',        cat: 'calcado',   cartas: 2 },
+  { id: 'acessorio1', nome: 'Acessório 1', cat: 'acessorio', cartas: 2, opcionalAPartirDe: 1 },
+  { id: 'acessorio2', nome: 'Acessório 2', cat: 'acessorio', cartas: 2, opcionalAPartirDe: 1 },
+];
+
+/** Slots visuais: so cartas, sem campo para o nome da peca (decidido no pedido). */
+const VISUAIS = [
+  ['topo', 'Topo'], ['meio', 'Meio'], ['baixo', 'Baixo'],
+  ['traje', 'Traje'], ['costas', 'Costas'],
+];
+
+const MONTARIAS = [
+  ['sturdy', 'Sturdy'], ['dexterity', 'Dexterity'],
+  ['strength', 'Strength'], ['protector', 'Protector'],
+];
+
+const QTD_PENAS = 5;
+const QTD_PETS = 4;
+const VERSAO = 1;
+const CHAVE_LOCAL = 'suprema:build:v1';
+
+/* ------------------------------------------------------------------ */
+/* Estado vazio - tambem e a documentacao viva do formato exportado    */
+/* ------------------------------------------------------------------ */
+
+function buildVazio() {
+  const equipamentos = {};
+  for (const eq of EQUIPAMENTOS) {
+    equipamentos[eq.id] = { item: '', cartas: Array(eq.cartas).fill('') };
+  }
+
+  const visuais = {};
+  for (const [id] of VISUAIS) visuais[id] = { cartas: ['', ''] };
+
+  const montarias = {};
+  for (const [id] of MONTARIAS) montarias[id] = null;
+
+  const penaVazia = () => ({ nome: '', nivel: null });
+
+  return {
+    versao: VERSAO,
+    atualizadoEm: null,
+    discordId: '',
+    nick: '',
+    classeId: '',
+    atributos: Object.fromEntries(ATRIBUTOS.map(([id]) => [id, null])),
+    equipamentos,
+    visuais,
+    penas: {
+      ofensivas: Array.from({ length: QTD_PENAS }, penaVazia),
+      defensivas: Array.from({ length: QTD_PENAS }, penaVazia),
+    },
+    montarias,
+    pets: Array.from({ length: QTD_PETS }, () => ({ nome: '', grade: null })),
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Helpers de DOM                                                      */
+/* ------------------------------------------------------------------ */
+
+function el(tag, props = {}, filhos = []) {
+  const node = Object.assign(document.createElement(tag), props);
+  for (const f of [].concat(filhos)) if (f) node.append(f);
+  return node;
+}
+
+/** Le/escreve por caminho ("equipamentos.arma.cartas.0"). */
+function lerCaminho(obj, caminho) {
+  return caminho.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
+}
+
+function escreverCaminho(obj, caminho, valor) {
+  const chaves = caminho.split('.');
+  const ultima = chaves.pop();
+  const alvo = chaves.reduce((o, k) => (o[k] ??= {}), obj);
+  alvo[ultima] = valor;
+}
+
+/**
+ * Todo input carrega `data-caminho`. Com isso `coletar()` e `aplicar()` sao
+ * genericos: acrescentar um campo no esquema nao exige tocar em nenhum dos dois.
+ */
+function campo(rotulo, caminho, extras = {}) {
+  const { lista, tipo = 'text', min, max, placeholder } = extras;
+  const id = `f-${caminho.replace(/\./g, '-')}`;
+  const input = el('input', { id, type: tipo, placeholder: placeholder ?? '' });
+  input.dataset.caminho = caminho;
+  if (lista) input.setAttribute('list', lista);
+  if (min !== undefined) input.min = min;
+  if (max !== undefined) input.max = max;
+  return el('div', { className: 'campo' }, [el('label', { htmlFor: id, textContent: rotulo }), input]);
+}
+
+function secao(titulo, nota, conteudo) {
+  const cabecalho = el('h2', {}, [el('span', { textContent: titulo })]);
+  if (nota) cabecalho.append(el('span', { className: 'nota', textContent: nota }));
+  return el('section', {}, [cabecalho, el('div', { className: 'conteudo' }, conteudo)]);
+}
+
+/** Um <datalist> por categoria de carta; o input so sugere, nunca restringe. */
+function montarDatalists() {
+  const frag = document.createDocumentFragment();
+  for (const [cat, nomes] of Object.entries(window.CARTAS ?? {})) {
+    const dl = el('datalist', { id: `cartas-${cat}` });
+    for (const nome of nomes) dl.append(el('option', { value: nome }));
+    frag.append(dl);
+  }
+  return frag;
+}
+
+/* ------------------------------------------------------------------ */
+/* Montagem das secoes                                                 */
+/* ------------------------------------------------------------------ */
+
+function secaoIdentificacao() {
+  const selectClasse = el('select', { id: 'f-classeId' }, [el('option', { value: '', textContent: '—' })]);
+  selectClasse.dataset.caminho = 'classeId';
+  for (const [id, nome] of CLASSES) selectClasse.append(el('option', { value: id, textContent: nome }));
+
+  return secao('Identificação', 'preenchido pelo login quando o servidor existir', [
+    el('div', { className: 'grade g-ident' }, [
+      campo('Discord ID', 'discordId', { placeholder: '000000000000000000' }),
+      campo('Nick in-game', 'nick', { placeholder: 'como aparece no jogo' }),
+      el('div', { className: 'campo' }, [
+        el('label', { htmlFor: 'f-classeId', textContent: 'Classe' }),
+        selectClasse,
+      ]),
+    ]),
+  ]);
+}
+
+function secaoAtributos() {
+  const grade = el('div', { className: 'grade g-attr' });
+  for (const [id, sigla, nome] of ATRIBUTOS) {
+    grade.append(campo(`${sigla} · ${nome}`, `atributos.${id}`, { tipo: 'number', min: 0, placeholder: '0' }));
+  }
+  const total = el('p', { className: 'total', id: 'total-atributos' });
+  return secao('Atributos', 'valores finais, do jeito que aparecem no jogo', [grade, total]);
+}
+
+function cardComCartas({ titulo, prefixo, cat, qtdCartas, comItem, nota, opcionalAPartirDe }) {
+  const card = el('div', { className: 'card' });
+  const cabecalho = el('h3', {}, [el('span', { textContent: titulo })]);
+  const etiqueta = `${qtdCartas} carta${qtdCartas > 1 ? 's' : ''}${nota ? ` · ${nota}` : ''}`;
+  cabecalho.append(el('span', { className: 'slots', textContent: etiqueta }));
+  card.append(cabecalho);
+
+  if (comItem) card.append(campo('Item equipado', `${prefixo}.item`, { placeholder: 'nome do equipamento' }));
+
+  for (let i = 0; i < qtdCartas; i += 1) {
+    const opcional = opcionalAPartirDe !== undefined && i >= opcionalAPartirDe;
+    card.append(campo(
+      `Carta ${i + 1}${opcional ? ' (opcional)' : ''}`,
+      `${prefixo}.cartas.${i}`,
+      { lista: `cartas-${cat}`, placeholder: 'digite ou escolha' },
+    ));
+  }
+  return card;
+}
+
+function secaoEquipamentos() {
+  const grade = el('div', { className: 'grade g-cards' });
+  for (const eq of EQUIPAMENTOS) {
+    grade.append(cardComCartas({
+      titulo: eq.nome,
+      prefixo: `equipamentos.${eq.id}`,
+      cat: eq.cat,
+      qtdCartas: eq.cartas,
+      comItem: true,
+      nota: eq.nota,
+      opcionalAPartirDe: eq.opcionalAPartirDe,
+    }));
+  }
+  return secao('Equipamentos e cartas', 'nome do item é texto livre; a carta tem sugestão', [grade]);
+}
+
+function secaoVisuais() {
+  const grade = el('div', { className: 'grade g-cards' });
+  for (const [id, nome] of VISUAIS) {
+    grade.append(cardComCartas({
+      titulo: nome, prefixo: `visuais.${id}`, cat: 'visual', qtdCartas: 2, comItem: false,
+    }));
+  }
+  return secao('Cartas de visual', 'catálogo de sugestões ainda vazio — digite livremente', [grade]);
+}
+
+function secaoPenas() {
+  const bloco = (chave, rotulo) => {
+    const grade = el('div', { className: 'grade g-penas' });
+    for (let i = 0; i < QTD_PENAS; i += 1) {
+      grade.append(el('div', { className: 'linha-dupla' }, [
+        campo(`${rotulo} ${i + 1}`, `penas.${chave}.${i}.nome`, { placeholder: 'nome da pena' }),
+        campo('Nível', `penas.${chave}.${i}.nivel`, { tipo: 'number', min: 0, placeholder: '—' }),
+      ]));
+    }
+    return el('div', {}, [
+      el('p', { className: 'total', style: 'margin:0 0 8px', textContent: `${rotulo}s` }),
+      grade,
+    ]);
+  };
+
+  return secao('Penas', '5 ofensivas + 5 defensivas · o nível é opcional', [
+    bloco('ofensivas', 'Ofensiva'),
+    el('div', { style: 'height:18px' }),
+    bloco('defensivas', 'Defensiva'),
+  ]);
+}
+
+function secaoMontarias() {
+  const grade = el('div', { className: 'grade g-mont' });
+  for (const [id, nome] of MONTARIAS) {
+    grade.append(campo(nome, `montarias.${id}`, { tipo: 'number', min: 0, placeholder: 'nível' }));
+  }
+  return secao('Montarias', 'nível de cada uma', [grade]);
+}
+
+function secaoPets() {
+  const grade = el('div', { className: 'grade g-penas' });
+  for (let i = 0; i < QTD_PETS; i += 1) {
+    grade.append(el('div', { className: 'linha-dupla' }, [
+      campo(`Pet ${i + 1}`, `pets.${i}.nome`, { placeholder: 'nome do pet' }),
+      campo('Grade', `pets.${i}.grade`, { tipo: 'number', min: 1, max: 10, placeholder: '1–10' }),
+    ]));
+  }
+  return secao('Pets', 'grade de 1 a 10', [grade]);
+}
+
+/* ------------------------------------------------------------------ */
+/* Coletar / aplicar                                                   */
+/* ------------------------------------------------------------------ */
+
+const form = document.getElementById('ficha');
+const status = document.getElementById('status');
+
+function inputs() {
+  return form.querySelectorAll('[data-caminho]');
+}
+
+/**
+ * Numero vazio vira `null`, nao 0 - "nao preenchi" e diferente de "zero", e o
+ * card do Discord vai precisar da diferenca para mostrar "—" no lugar certo.
+ */
+function valorDoInput(input) {
+  const bruto = input.value.trim();
+  if (input.type !== 'number') return bruto;
+  if (bruto === '') return null;
+  const n = Number(bruto);
+  return Number.isFinite(n) ? n : null;
+}
+
+function coletar() {
+  const build = buildVazio();
+  for (const input of inputs()) escreverCaminho(build, input.dataset.caminho, valorDoInput(input));
+  build.atualizadoEm = new Date().toISOString();
+  return build;
+}
+
+/** Ignora campo desconhecido e tolera campo faltando - import de versao antiga nao quebra. */
+function aplicar(dados) {
+  for (const input of inputs()) {
+    const valor = lerCaminho(dados, input.dataset.caminho);
+    input.value = valor === null || valor === undefined ? '' : String(valor);
+  }
+  atualizarTotal();
+}
+
+function atualizarTotal() {
+  const soma = ATRIBUTOS
+    .map(([id]) => Number(document.getElementById(`f-atributos-${id}`)?.value || 0))
+    .reduce((a, b) => a + b, 0);
+  const alvo = document.getElementById('total-atributos');
+  alvo.textContent = '';
+  alvo.append('Soma dos atributos: ', el('strong', { textContent: String(soma) }));
+}
+
+/* ------------------------------------------------------------------ */
+/* Persistencia local                                                  */
+/* ------------------------------------------------------------------ */
+
+function avisar(texto, tipo = '') {
+  status.textContent = texto;
+  status.className = `status ${tipo}`;
+}
+
+let timerSalvar = null;
+function salvarDepois() {
+  clearTimeout(timerSalvar);
+  timerSalvar = setTimeout(() => {
+    try {
+      localStorage.setItem(CHAVE_LOCAL, JSON.stringify(coletar()));
+      const hora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      avisar(`Salvo neste navegador às ${hora}`, 'ok');
+    } catch (err) {
+      // Cota estourada ou localStorage bloqueado (file:// em modo restrito).
+      avisar(`Não consegui salvar: ${err.message}. Exporte o JSON.`, 'erro');
+    }
+  }, 400);
+}
+
+function carregarSalvo() {
+  let bruto = null;
+  try {
+    bruto = localStorage.getItem(CHAVE_LOCAL);
+  } catch {
+    avisar('Este navegador bloqueou o salvamento automático — exporte o JSON ao terminar.', 'erro');
+    return;
+  }
+  if (!bruto) {
+    avisar('Ficha em branco');
+    return;
+  }
+  try {
+    aplicar(JSON.parse(bruto));
+    avisar('Ficha recuperada deste navegador', 'ok');
+  } catch {
+    avisar('O rascunho salvo estava corrompido e foi ignorado', 'erro');
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Acoes                                                               */
+/* ------------------------------------------------------------------ */
+
+function nomeDoArquivo(build) {
+  const base = (build.nick || build.discordId || 'build').replace(/[^\w.-]+/g, '-').toLowerCase();
+  return `build-${base}.json`;
+}
+
+document.getElementById('btn-exportar').addEventListener('click', () => {
+  const build = coletar();
+  const blob = new Blob([JSON.stringify(build, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = el('a', { href: url, download: nomeDoArquivo(build) });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  avisar('JSON baixado', 'ok');
+});
+
+document.getElementById('btn-copiar').addEventListener('click', async () => {
+  const texto = JSON.stringify(coletar(), null, 2);
+  try {
+    await navigator.clipboard.writeText(texto);
+    avisar('JSON copiado para a área de transferência', 'ok');
+  } catch {
+    // navigator.clipboard exige contexto seguro; em file:// costuma falhar.
+    const ta = el('textarea', { value: texto, style: 'position:fixed;opacity:0' });
+    document.body.append(ta);
+    ta.select();
+    const deu = document.execCommand('copy');
+    ta.remove();
+    avisar(deu ? 'JSON copiado' : 'Não consegui copiar — use "Baixar JSON"', deu ? 'ok' : 'erro');
+  }
+});
+
+const dlg = document.getElementById('dlg-importar');
+document.getElementById('btn-importar').addEventListener('click', () => dlg.showModal());
+document.getElementById('btn-cancelar-import').addEventListener('click', () => dlg.close());
+
+document.getElementById('arquivo').addEventListener('change', async (ev) => {
+  const arquivo = ev.target.files?.[0];
+  if (arquivo) document.getElementById('colado').value = await arquivo.text();
+});
+
+document.getElementById('btn-confirmar-import').addEventListener('click', () => {
+  const texto = document.getElementById('colado').value.trim();
+  if (!texto) {
+    avisar('Nada para importar', 'erro');
+    return;
+  }
+  let dados;
+  try {
+    dados = JSON.parse(texto);
+  } catch (err) {
+    avisar(`JSON inválido: ${err.message}`, 'erro');
+    return;
+  }
+  aplicar(dados);
+  salvarDepois();
+  dlg.close();
+  document.getElementById('colado').value = '';
+  document.getElementById('arquivo').value = '';
+  avisar('Ficha importada', 'ok');
+});
+
+document.getElementById('btn-limpar').addEventListener('click', () => {
+  if (!confirm('Apagar tudo o que está preenchido nesta ficha?')) return;
+  aplicar(buildVazio());
+  salvarDepois();
+  avisar('Ficha limpa');
+});
+
+/* ------------------------------------------------------------------ */
+/* Boot                                                                */
+/* ------------------------------------------------------------------ */
+
+form.append(
+  montarDatalists(),
+  secaoIdentificacao(),
+  secaoAtributos(),
+  secaoEquipamentos(),
+  secaoVisuais(),
+  secaoPenas(),
+  secaoMontarias(),
+  secaoPets(),
+);
+
+form.addEventListener('input', () => {
+  atualizarTotal();
+  salvarDepois();
+});
+
+/**
+ * `min`/`max` de <input type=number> so valem na validacao de submit, e este
+ * formulario nunca da submit. Sem este clamp, grade 50 num pet seria aceita e
+ * exportada.
+ */
+form.addEventListener('change', (ev) => {
+  const alvo = ev.target;
+  if (alvo.type !== 'number' || alvo.value === '') return;
+  const n = Number(alvo.value);
+  if (!Number.isFinite(n)) { alvo.value = ''; return; }
+  const min = alvo.min === '' ? -Infinity : Number(alvo.min);
+  const max = alvo.max === '' ? Infinity : Number(alvo.max);
+  const limitado = Math.min(Math.max(n, min), max);
+  if (limitado !== n) {
+    alvo.value = String(limitado);
+    avisar(`Valor ajustado para o limite do campo (${limitado})`, 'erro');
+    atualizarTotal();
+    salvarDepois();
+  }
+});
+form.addEventListener('submit', (ev) => ev.preventDefault());
+
+carregarSalvo();
+atualizarTotal();
+</script>
+</body>
+</html>

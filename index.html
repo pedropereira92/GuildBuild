@@ -17,12 +17,16 @@
   esses campos a mao, como antes. Isso PREENCHE, NAO AUTENTICA - ver o bloco
   "Vinculo vindo do Discord" la embaixo.
 
-  O QUE FALTA PARA SER LOGIN DE VERDADE (etapa 2, ainda nao feita):
-    1. subir um HTTP no container (o bot hoje nao abre porta nenhuma);
-    2. assinar o link (HMAC + validade) OU OAuth2, com o SERVIDOR conferindo;
-    3. o "Baixar JSON" vira um POST que grava em data/builds.json pela store
-       (src/lib/store.js), e o /perfil passa a mostrar o build para a guild.
-  Nada aqui precisa ser reescrito para isso: o JSON exportado ja e o contrato.
+  COMO A FICHA CHEGA NA GUILD: o membro clica em "Baixar JSON" e manda o arquivo
+  no Discord com `/build enviar`. O bot valida (src/lib/build.js), grava em
+  data/builds.json e passa a mostrar no /perfil e no /build ver. Nao ha POST
+  daqui - a pagina continua sem falar com servidor nenhum.
+
+  O QUE FALTA PARA SER LOGIN DE VERDADE (ainda nao feito): assinar o link
+  (HMAC + validade) ou OAuth2, com um SERVIDOR conferindo - hoje o vinculo do
+  link so preenche. Enquanto o envio passa pelo /build, o Discord ja garante
+  quem enviou: o build fica no id de quem rodou o comando, nao no que veio no
+  arquivo.
 
   FORMATO DO JSON (versao 1) - o que o backend futuro vai ler:
     { versao, atualizadoEm, discordId, nick, classeId,
@@ -226,7 +230,8 @@
   <h1>Ficha de Build</h1>
   <p>
     Preencha atributos, equipamentos, cartas, penas, montarias e pets. O que você digita é
-    salvo automaticamente <strong>neste navegador</strong> — nada sai daqui até você exportar.
+    salvo automaticamente <strong>neste navegador</strong>. Ao terminar, clique em
+    <strong>Baixar JSON</strong> e mande o arquivo no Discord com <code>/build enviar</code>.
   </p>
 </header>
 

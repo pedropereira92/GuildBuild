@@ -17,10 +17,12 @@
   esses campos a mao, como antes. Isso PREENCHE, NAO AUTENTICA - ver o bloco
   "Vinculo vindo do Discord" la embaixo.
 
-  COMO A FICHA CHEGA NA GUILD: o membro clica em "Baixar JSON" e manda o arquivo
-  no Discord com `/build enviar`. O bot valida (src/lib/build.js), grava em
-  data/builds.json e passa a mostrar no /perfil e no /build ver. Nao ha POST
-  daqui - a pagina continua sem falar com servidor nenhum.
+  COMO A FICHA CHEGA NA GUILD (dois caminhos, mesmo destino):
+    - "Copiar para o Discord" copia o JSON minificado -> /build colar (modal);
+    - "Baixar JSON" gera o arquivo -> /build enviar (anexo).
+  O bot valida (src/lib/build.js), grava em data/builds.json e mostra no /perfil
+  e no /build ver. Nao ha POST daqui - a pagina nao fala com servidor nenhum, e
+  e por isso que o envio passa pelo Discord: e ele que garante quem enviou.
 
   O QUE FALTA PARA SER LOGIN DE VERDADE (ainda nao feito): assinar o link
   (HMAC + validade) ou OAuth2, com um SERVIDOR conferindo - hoje o vinculo do
@@ -231,7 +233,8 @@
   <p>
     Preencha atributos, equipamentos, cartas, penas, montarias e pets. O que você digita é
     salvo automaticamente <strong>neste navegador</strong>. Ao terminar, clique em
-    <strong>Baixar JSON</strong> e mande o arquivo no Discord com <code>/build enviar</code>.
+    <strong>Copiar para o Discord</strong> e cole em <code>/build colar</code> — ou baixe o
+    arquivo e mande com <code>/build enviar</code>, tanto faz.
   </p>
 </header>
 
@@ -245,8 +248,8 @@
 </main>
 
 <div class="barra">
-  <button type="button" class="principal" id="btn-exportar">Baixar JSON</button>
-  <button type="button" id="btn-copiar">Copiar JSON</button>
+  <button type="button" class="principal" id="btn-copiar">Copiar para o Discord</button>
+  <button type="button" id="btn-exportar">Baixar JSON</button>
   <button type="button" id="btn-importar">Importar</button>
   <button type="button" class="perigo" id="btn-limpar">Limpar ficha</button>
   <span class="status" id="status">—</span>
@@ -720,20 +723,31 @@ document.getElementById('btn-exportar').addEventListener('click', () => {
   avisar('JSON baixado', 'ok');
 });
 
+/**
+ * Minificado, nao indentado: isto vai para o modal do `/build colar`, que aceita
+ * 4000 caracteres. Uma ficha com TODO slot preenchido da ~2100 minificada e
+ * ~3200 indentada - com a indentacao a folga sumiria a troco de nada.
+ */
 document.getElementById('btn-copiar').addEventListener('click', async () => {
-  const texto = JSON.stringify(coletar(), null, 2);
+  const texto = JSON.stringify(coletar());
+  const instrucao = 'Copiado! No Discord: /build colar → Ctrl+V → Enter';
+  let copiou = false;
   try {
     await navigator.clipboard.writeText(texto);
-    avisar('JSON copiado para a área de transferência', 'ok');
+    copiou = true;
   } catch {
     // navigator.clipboard exige contexto seguro; em file:// costuma falhar.
     const ta = el('textarea', { value: texto, style: 'position:fixed;opacity:0' });
     document.body.append(ta);
     ta.select();
-    const deu = document.execCommand('copy');
+    copiou = document.execCommand('copy');
     ta.remove();
-    avisar(deu ? 'JSON copiado' : 'Não consegui copiar — use "Baixar JSON"', deu ? 'ok' : 'erro');
   }
+  avisar(
+    copiou ? instrucao : 'Não consegui copiar — use "Baixar JSON" e mande com /build enviar',
+    copiou ? 'ok' : 'erro',
+    true,
+  );
 });
 
 const dlg = document.getElementById('dlg-importar');
